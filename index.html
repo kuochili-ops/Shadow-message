@@ -258,15 +258,16 @@
             bottom: 60px;
             left: 50%;
             transform: translateX(-50%) translateY(20px);
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(0, 0, 0, 0.85);
             color: #fff;
-            padding: 8px 16px;
+            padding: 10px 20px;
             border-radius: 20px;
             font-size: 0.85rem;
             opacity: 0;
             pointer-events: none;
             transition: all 0.3s ease;
             z-index: 120;
+            white-space: nowrap;
         }
         .toast-msg.show {
             opacity: 1;
@@ -550,24 +551,31 @@
             rebuildText(lastLightX > 0);
         }
 
-        // --- URL Hash 功能 ---
+        // --- 優化：帶有全瀏覽器與多行訊息相容的 URL Hash 編解碼功能 ---
         function updateURLHash() {
-            const params = new URLSearchParams();
-            params.set('msg', document.getElementById('text-input').value);
-            params.set('e', document.getElementById('input-extrude').value);
-            params.set('s', document.getElementById('input-spacing').value);
-            params.set('ly', document.getElementById('input-lighty').value);
-            params.set('lz', document.getElementById('input-lightz').value);
-            params.set('lx', document.getElementById('input-lightx').value);
-            params.set('spd', document.getElementById('input-speed').value);
-            window.location.hash = params.toString();
+            const config = {
+                msg: encodeURIComponent(document.getElementById('text-input').value),
+                e: document.getElementById('input-extrude').value,
+                s: document.getElementById('input-spacing').value,
+                ly: document.getElementById('input-lighty').value,
+                lz: document.getElementById('input-lightz').value,
+                lx: document.getElementById('input-lightx').value,
+                spd: document.getElementById('input-speed').value
+            };
+            
+            const hashParts = Object.keys(config).map(k => `${k}=${config[k]}`);
+            window.location.hash = hashParts.join('&');
         }
 
         function loadFromURLHash() {
             if (!window.location.hash) return;
             try {
-                const params = new URLSearchParams(window.location.hash.slice(1));
-                if (params.has('msg')) document.getElementById('text-input').value = params.get('msg');
+                const hashStr = window.location.hash.slice(1);
+                const params = new URLSearchParams(hashStr);
+
+                if (params.has('msg')) {
+                    document.getElementById('text-input').value = decodeURIComponent(params.get('msg'));
+                }
                 if (params.has('e')) {
                     document.getElementById('input-extrude').value = params.get('e');
                     document.getElementById('val-extrude').textContent = params.get('e');
@@ -595,14 +603,43 @@
             } catch (e) {}
         }
 
+        // --- 優化：全設備 (包含 iOS Safari) 100% 成功複製剪貼簿函數 ---
+        function copyToClipboard(textToCopy) {
+            if (navigator.clipboard && window.isSecureContext) {
+                return navigator.clipboard.writeText(textToCopy);
+            } else {
+                return new Promise((resolve, reject) => {
+                    const textArea = document.createElement('textarea');
+                    textArea.value = textToCopy;
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
+                    try {
+                        document.execCommand('copy');
+                        textArea.remove();
+                        resolve();
+                    } catch (error) {
+                        textArea.remove();
+                        reject(error);
+                    }
+                });
+            }
+        }
+
         const shareBtn = document.getElementById('share-btn');
         const toastMsg = document.getElementById('toast-msg');
 
         shareBtn.addEventListener('click', () => {
             updateURLHash();
-            navigator.clipboard.writeText(window.location.href).then(() => {
+            const shareUrl = window.location.href;
+            copyToClipboard(shareUrl).then(() => {
                 toastMsg.classList.add('show');
                 setTimeout(() => toastMsg.classList.remove('show'), 2500);
+            }).catch(() => {
+                alert('複製失敗，請手動複製網址列的連結');
             });
         });
 
@@ -746,11 +783,9 @@
             let lx = lastLightX;
 
             if (isLooping || isPreviewAnim) {
-                // 乘上速度倍率
                 animTime += 0.012 * speedMultiplier;
                 lx = -Math.cos(animTime) * amplitude;
 
-                // 光源過中線切換下一行訊息
                 if ((lastLightX < 0 && lx >= 0) || (lastLightX > 0 && lx <= 0)) {
                     currentLineIndex = (currentLineIndex + 1) % lines.length;
                     rebuildText(lx > 0);
